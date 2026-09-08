@@ -2,8 +2,13 @@
 
 Bibliothèque de modules PowerShell réutilisables, pour **Windows PowerShell 5.1**.
 
-Portage de [PS7-Core](../PS7-Core) vers les hôtes où PowerShell 7 ne peut pas
-être installé. Même surface publique, mêmes principes de conception ; ce qui
+Portage de [PS7-Core](../PS7-Core) pour les scripts qui **sont lancés** par
+Windows PowerShell 5.1, indépendamment de ce qui est installé sur la machine :
+double-clic sur un `.ps1`, `.cmd`, tâche planifiée, SCCM, GPO — autant de
+mécanismes qu'on ne contrôle pas et qui retombent sur `powershell.exe`, même
+là où `pwsh` est présent par ailleurs.
+
+Même surface publique que PS7-Core, mêmes principes de conception ; ce qui
 change est documenté ci-dessous, et rien d'autre.
 
 Le nom porte la contrainte, comme celui de PS7-Core : les deux bibliothèques
@@ -109,10 +114,22 @@ Deux conséquences directes :
   `Get-FileHash` plutôt que par un flux `[SHA256]` — plus court, et plus
   susceptible de survivre là-bas.
 
-> **CLM n'est pas pour autant traité.** `Get-StringHash` utilise encore .NET
-> (aucune cmdlet n'équivaut), et rien n'a été vérifié sur un vrai poste
-> verrouillé. Le mode se lit par
+> **CLM mesuré sur le poste cible, et écarté.** Diagnostic du 2026-09-09, sous
+> 5.1 et sous pwsh 7.5.4 : `LanguageMode = FullLanguage` dans les deux, Code
+> Integrity usermode `Off`, AppLocker `NotConfigured`. Les précautions ci-dessus
+> restent, elles ne coûtent rien et couvrent un autre poste — mais **ce n'est
+> pas une contrainte active ici**. `Get-StringHash` utilise toujours .NET
+> (aucune cmdlet n'équivaut) et tomberait en CLM ; le mode se lit par
 > `$ExecutionContext.SessionState.LanguageMode`.
+
+**Deux contraintes réelles relevées sur ce poste, et celles-là mordent :**
+
+- **`ExecutionPolicy = MachinePolicy=RemoteSigned` sous 5.1**, imposée par GPO,
+  donc non contournable par `Set-ExecutionPolicy -Scope CurrentUser`. Tout
+  `.ps1` arrivé par zip — PS5-Core compris — doit passer par `Unblock-File`.
+- **Le dossier de modules de 5.1 n'est pas celui de PS7** :
+  `Documents\WindowsPowerShell\Modules`, et non `Documents\PowerShell\Modules`
+  que Windows PowerShell ignore. Voir la section Installation.
 
 ## Utilisation
 
