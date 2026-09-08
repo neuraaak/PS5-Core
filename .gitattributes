@@ -1,0 +1,27 @@
+# Normalisation par defaut : git decide, stockage en LF.
+* text=auto
+
+# Sources PowerShell : CRLF garanti dans l'arbre de travail, quelle que soit la
+# configuration core.autocrlf du poste qui clone. Windows PowerShell 5.1 lit du
+# LF sans broncher, mais l'outillage Windows historique (Bloc-notes, editeurs
+# de scripts, conhost) ne le fait pas toujours, et ce depot ne cible que 5.1.
+*.ps1  text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf
+
+# ATTENTION - encodage. Les sources doivent rester en UTF-8 AVEC BOM : sans lui,
+# Windows PowerShell 5.1 lit un .ps1 comme de l'ANSI et corrompt les caracteres
+# accentues jusque dans les chaines litterales.
+#
+# Git ne peut pas l'imposer : le BOM fait partie du CONTENU, pas des attributs.
+# Il est donc preserve tel quel, mais rien ici ne l'ajoutera s'il manque, et
+# working-tree-encoding=UTF-8 serait un no-op (UTF-8 est deja l'encodage interne
+# de git). La verification reste manuelle, ou a la charge de l'editeur.
+
+# Documentation : LF, c'est ce qu'attendent les rendus web.
+*.md text eol=lf
+
+# Fichiers a ne jamais convertir.
+*.png binary
+*.jpg binary
+*.ico binary
