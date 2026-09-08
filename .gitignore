@@ -1,0 +1,11 @@
+# Artefacts de test
+.tmp/
+*.log
+
+# Windows / editeurs
+Thumbs.db
+desktop.ini
+.vscode/
+
+# Plans et specs de travail (superpowers)
+.superpowers/
