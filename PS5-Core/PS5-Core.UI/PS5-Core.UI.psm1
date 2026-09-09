@@ -57,6 +57,42 @@ $script:InProgressScope = $false
 # L'avis de bascule d'Auto est émis une fois par session, pas par appel.
 $script:AutoNoticeShown = $false
 
+# Résolution du logger de PS5-Core.Runtime, faite UNE SEULE FOIS. L'appel
+# traverse la frontière de sous-module imbriqué : c'est un chemin que le projet
+# n'empruntait pas avant le logging, et une sonde de test le couvre.
+# Le drapeau séparé évite de re-sonder à chaque appel quand la fonction est
+# absente (import direct de PS5-Core.UI, hors du méta-module).
+$script:LogWriterProbed = $false
+$script:LogWriter = $null
+
+# Correspondance Type d'affichage -> niveau de log. Success et Skipped sont de
+# l'information : ils ne méritent pas un niveau à eux.
+$script:LogLevelForType = @{
+    Info    = 'Info'
+    Success = 'Info'
+    Skipped = 'Info'
+    Debug   = 'Debug'
+    Warning = 'Warning'
+    Error   = 'Error'
+}
+
+function Write-TeeLog {
+    param(
+        [AllowNull()][AllowEmptyString()][string]$Message,
+        [string]$Level = 'Info'
+    )
+
+    if (-not $script:LogWriterProbed) {
+        $script:LogWriter = Get-Command Write-Log -ErrorAction SilentlyContinue
+        $script:LogWriterProbed = $true
+    }
+    if ($null -eq $script:LogWriter) { return }
+
+    # Write-Log ne lève jamais, mais l'affichage passe avant la trace : si cette
+    # garantie changeait un jour, le tee ne doit toujours rien casser.
+    try { & $script:LogWriter -Message $Message -Level $Level } catch { }
+}
+
 #endregion
 
 
@@ -277,6 +313,8 @@ function Write-StatusMessage {
         $null = Initialize-EnhancedUI
     }
 
+    Write-TeeLog -Message $Message -Level $script:LogLevelForType[$Type]
+
     Write-StatusMessagePS5 -Message $Message -Type $Type
 }
 
@@ -384,6 +422,8 @@ function Write-Header {
     if (-not $script:UIContext.Initialized) {
         $null = Initialize-EnhancedUI
     }
+
+    Write-TeeLog -Message $Title -Level 'Info'
 
     Write-HeaderPS5 -Title $Title -Color $Color
 

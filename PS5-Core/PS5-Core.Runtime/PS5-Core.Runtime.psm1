@@ -10,6 +10,13 @@
     License: MIT
 #>
 
+#region Module Loading
+
+. (Join-Path $PSScriptRoot 'Logging.ps1')
+
+#endregion
+
+
 #region Public Functions
 
 <#
@@ -52,7 +59,10 @@ function Assert-PowerShell5 {
 #region Module Initialization
 
 Export-ModuleMember -Function @(
-    'Assert-PowerShell5'
+    'Assert-PowerShell5',
+    'Initialize-Logging',
+    'Write-Log',
+    'Get-LogContext'
 )
 
 #endregion
