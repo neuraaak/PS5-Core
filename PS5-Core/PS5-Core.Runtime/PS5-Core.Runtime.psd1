@@ -5,7 +5,7 @@
     # Version number of this module. Single source of truth for the whole
     # library: the four manifests move together. The submodules never ship on
     # their own, so a version of their own would inform nobody and only drift.
-    ModuleVersion     = '1.0.0'
+    ModuleVersion     = '1.1.0'
 
     # ID used to uniquely identify this module
     GUID              = '0d474787-cd9d-40f3-9df9-c2ca40ea6907'

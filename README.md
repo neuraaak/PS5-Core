@@ -221,6 +221,34 @@ script écrit pour l'une s'exécute sur l'autre sans modification.
 | `Get-StringHash`       | Hash d'une chaîne                                        |
 | `Test-FileIntegrity`   | Compare un fichier à un hash attendu                     |
 
+### Logging fichier
+
+Le logging est **opt-in** : tant que `Initialize-Logging` n'a pas ete
+appele, rien n'est ecrit et aucun fichier n'est cree.
+
+```powershell
+Import-Module PS5-Core
+Initialize-Logging -Path "$env:LOCALAPPDATA\MonScript\run.log"
+
+Write-StatusMessage "Traitement demarre" -Type Info   # affiche ET logue
+Write-Log -Message "detail interne" -Level Debug      # logue seulement
+```
+
+| Fonction | Role |
+| --- | --- |
+| `Initialize-Logging -Path <f> [-MinimumLevel <n>]` | Active le log. Peut lever si le chemin est inutilisable. |
+| `Write-Log -Message <m> [-Level <n>]` | Ecrit une ligne. Ne leve jamais. |
+| `Get-LogContext` | Etat courant : `Enabled`, `Path`, `MinimumLevel`. |
+
+Niveaux : `Debug` < `Info` (defaut) < `Warning` < `Error`.
+
+`Write-StatusMessage` et `Write-Header` alimentent le log automatiquement.
+`Write-ProgressBar` non : la progression noierait la trace.
+
+Il n'y a **pas de rotation** : pour un fichier par execution, mettre un
+horodatage dans le `-Path`. Un echec d'ecriture desactive le log et emet un
+avertissement, sans interrompre le script.
+
 ## Encodage des fichiers source
 
 Les `.ps1`, `.psm1` et `.psd1` sont en **UTF-8 avec BOM**, et doivent le rester.

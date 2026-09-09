@@ -5,7 +5,7 @@
     # Version number of this module. Single source of truth for the whole
     # library: the four manifests move together. The submodules never ship on
     # their own, so a version of their own would inform nobody and only drift.
-    ModuleVersion     = '1.0.0'
+    ModuleVersion     = '1.1.0'
 
     # ID used to uniquely identify this module
     GUID              = '72f309e7-8582-4cb1-8fe9-202e71a4cc43'
@@ -72,6 +72,11 @@
             LicenseUri   = ''
             ProjectUri   = ''
             ReleaseNotes = @'
+1.1.0
+- PS5-Core.Runtime : logging fichier opt-in (Initialize-Logging, Write-Log,
+  Get-LogContext), surface identique a PS7-Core.
+- PS5-Core.UI : Write-StatusMessage et Write-Header alimentent le log.
+
 v1.0.0
 - Port of PS7-Core to Windows PowerShell 5.1, same public surface.
 - PS5-Core.UI: two progress strategies (Bar / Text) resolved once by
