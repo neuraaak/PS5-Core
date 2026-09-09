@@ -151,6 +151,113 @@ if (-not $OnlyUI) {
 #endregion
 
 
+#region PS5-Core.Runtime logging tests
+################################################################################
+
+if (-not $OnlyUI) {
+    Write-TestHeader "PS5-Core.Runtime - Logging"
+
+    Test-Case "no log file before Initialize-Logging" {
+        $p = Join-Path $tempDir 'never-created.log'
+        Write-Log -Message 'ignored'
+        return (-not (Test-Path $p)) -and ((Get-LogContext).Enabled -eq $false)
+    }
+
+    Test-Case "Initialize-Logging creates the file and Write-Log appends a line" {
+        $p = Join-Path $tempDir 'basic.log'
+        Initialize-Logging -Path $p
+        Write-Log -Message 'hello world'
+        if (-not (Test-Path $p)) { return $false }
+        $line = @(Get-Content -Path $p | Where-Object { $_ -ne '' })[-1]
+        return ($line -match '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \[INFO   \] hello world$')
+    }
+
+    Test-Case "Get-LogContext reports the active path and level" {
+        $p = Join-Path $tempDir 'context.log'
+        Initialize-Logging -Path $p -MinimumLevel Debug
+        $ctx = Get-LogContext
+        return ($ctx.Enabled -eq $true) -and ($ctx.MinimumLevel -eq 'Debug') -and ($ctx.Path -eq $p)
+    }
+
+    Test-Case "MinimumLevel filters out lower levels" {
+        $p = Join-Path $tempDir 'filter.log'
+        Initialize-Logging -Path $p -MinimumLevel Warning
+        Write-Log -Message 'dropped' -Level Info
+        Write-Log -Message 'kept' -Level Error
+        $content = Get-Content -Path $p -Raw
+        return ($content -notmatch 'dropped') -and ($content -match 'kept')
+    }
+
+    Test-Case "a write failure disables logging instead of throwing" {
+        $sub = Join-Path $tempDir 'doomed'
+        $p = Join-Path $sub 'ok-then-broken.log'
+        Initialize-Logging -Path $p
+        Write-Log -Message 'first'
+        # Le repertoire parent disparait : l'ecriture suivante ne peut pas aboutir.
+        Remove-Item -Path $sub -Recurse -Force
+        try {
+            Write-Log -Message 'boom' -WarningAction SilentlyContinue
+        }
+        catch { return $false }
+        return ((Get-LogContext).Enabled -eq $false)
+    }
+
+    Test-Case "Initialize-Logging throws on an unusable path" {
+        try {
+            Initialize-Logging -Path 'Z:\no-such-volume\deep\x.log'
+            return $false
+        }
+        catch { return $true }
+    }
+
+    Test-Case "PROBE: .UI can resolve Write-Log across the nested boundary" {
+        $ui = (Get-Module PS5-Core).NestedModules | Where-Object Name -eq 'PS5-Core.UI'
+        if (-not $ui) { return $false }
+        $resolved = & $ui { Get-Command Write-Log -ErrorAction SilentlyContinue }
+        return ($null -ne $resolved)
+    }
+
+    Test-Case "Write-StatusMessage feeds the log with its Type as level" {
+        $p = Join-Path $tempDir 'tee.log'
+        Initialize-Logging -Path $p
+        Write-StatusMessage 'teed message' -Type Warning 6>$null
+        $content = Get-Content -Path $p -Raw
+        return ($content -match '\[WARNING\] teed message')
+    }
+
+    Test-Case "Write-Header feeds the log at Info level" {
+        $p = Join-Path $tempDir 'tee-header.log'
+        Initialize-Logging -Path $p
+        Write-Header 'Section title' 6>$null
+        $content = Get-Content -Path $p -Raw
+        return ($content -match '\[INFO   \] Section title')
+    }
+
+    Test-Case "Write-ProgressBar does NOT feed the log" {
+        $p = Join-Path $tempDir 'tee-progress.log'
+        Initialize-Logging -Path $p
+        Write-ProgressBar -Activity 'Work' -Current 1 -Total 2 6>$null
+        Write-ProgressBar -Activity 'Work' -Current 2 -Total 2 -Completed 6>$null
+        $content = Get-Content -Path $p -Raw
+        return ($content -notmatch 'Work')
+    }
+
+    Test-Case "the tee stays silent once logging has disabled itself" {
+        $sub = Join-Path $tempDir 'tee-doomed'
+        $p = Join-Path $sub 'off.log'
+        Initialize-Logging -Path $p
+        Remove-Item -Path $sub -Recurse -Force
+        try {
+            Write-StatusMessage 'no crash' -Type Info -WarningAction SilentlyContinue 6>$null
+            return ((Get-LogContext).Enabled -eq $false)
+        }
+        catch { return $false }
+    }
+}
+
+#endregion
+
+
 #region PS5-Core.UI tests
 ################################################################################
 

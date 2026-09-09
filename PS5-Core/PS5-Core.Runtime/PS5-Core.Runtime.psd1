@@ -31,7 +31,10 @@
 
     # Functions to export from this module
     FunctionsToExport = @(
-        'Assert-PowerShell5'
+        'Assert-PowerShell5',
+        'Initialize-Logging',
+        'Write-Log',
+        'Get-LogContext'
     )
 
     # Cmdlets to export from this module
