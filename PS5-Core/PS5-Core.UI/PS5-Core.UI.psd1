@@ -5,7 +5,7 @@
     # Version number of this module. Single source of truth for the whole
     # library: the four manifests move together. The submodules never ship on
     # their own, so a version of their own would inform nobody and only drift.
-    ModuleVersion     = '1.1.0'
+    ModuleVersion     = '1.2.0'
 
     # ID used to uniquely identify this module
     GUID              = '79c6cb38-da66-4543-af14-c03f59666479'
@@ -39,7 +39,10 @@
         'Write-Header',
         'Write-Summary',
         'Read-Selection',
-        'Read-FolderSelection'
+        'Read-FolderSelection',
+        'Read-Confirmation',
+        'Read-TextInput',
+        'Start-Spinner'
     )
 
     # Cmdlets to export from this module
@@ -56,9 +59,9 @@
     # Private data to pass to the module specified in RootModule/ModuleToProcess
     PrivateData       = @{
         PSData = @{
-            Tags         = @('UI', 'Console', 'Progress', 'Output', 'Color')
-            LicenseUri   = ''
-            ProjectUri   = ''
+            Tags       = @('UI', 'Console', 'Progress', 'Output', 'Color')
+            LicenseUri = ''
+            ProjectUri = ''
         }
     }
 }

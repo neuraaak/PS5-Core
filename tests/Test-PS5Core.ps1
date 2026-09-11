@@ -87,6 +87,23 @@ function Test-Case {
     }
 }
 
+function Test-Rejects {
+    <#
+        Vrai quand l'appel leve POUR UNE RAISON METIER. Un simple try/catch ne
+        suffit pas : une commande absente leve elle aussi, ce qui ferait passer
+        au vert un test ecrit avant la fonction — sans rien prouver.
+    #>
+    param([Parameter(Mandatory)][scriptblock]$Body)
+
+    try {
+        & $Body | Out-Null
+        return $false
+    }
+    catch {
+        return -not ($_.Exception -is [System.Management.Automation.CommandNotFoundException])
+    }
+}
+
 #endregion
 
 
@@ -328,10 +345,13 @@ if (-not $OnlyRuntime) {
         # Parite de piege avec PS7-Core : une reaffectation est perdue, une
         # mutation d'objet est conservee. Un passe-plat sans scope ferait
         # 'marcher' ici du code qui casserait une fois porte sous PS7-Core.
+        # La valeur vue DANS le scope est rangee dans le sac, qui survit : sans
+        # cette relecture, le cas passerait aussi si l'affectation n'avait aucun
+        # effet, et ne prouverait donc pas que c'est la SORTIE qui la perd.
         $compteur = 0
         $sac = @{ n = 0 }
-        Start-ProgressScope { $compteur = 99; $sac['n'] = 42 } | Out-Null
-        ($compteur -eq 0) -and ($sac['n'] -eq 42)
+        Start-ProgressScope { $compteur = 99; $sac['vu'] = $compteur; $sac['n'] = 42 } | Out-Null
+        ($compteur -eq 0) -and ($sac['vu'] -eq 99) -and ($sac['n'] -eq 42)
     }
 
     Test-Case "Write-ProgressBar tolere Total = 0" {
@@ -403,6 +423,116 @@ if (-not $OnlyRuntime) {
     Test-Case "-Interactive avec entree redirigee conserve tout" {
         if (-not [Console]::IsInputRedirected) { return 'SKIP' }
         (@(Read-FolderSelection -Path $rfsRoot -ExcludeName 'excluded-a' -Interactive)).Count -eq 2
+    }
+}
+
+#endregion
+
+
+#region PS5-Core.UI — Read-Confirmation
+
+if (-not $OnlyRuntime) {
+    Write-TestHeader "PS5-Core.UI — Read-Confirmation"
+
+    # Ces assertions reposent sur [Console]::IsInputRedirected : dans cet hote de
+    # test stdin EST redirige, donc la garde non interactive tranche et aucune
+    # invite ne bloque la passe.
+
+    Test-Case "entree redirigee rend le defaut false" {
+        (Read-Confirmation -Message 'Continuer ?') -eq $false
+    }
+
+    Test-Case "entree redirigee rend un -DefaultValue explicite" {
+        (Read-Confirmation -Message 'Continuer ?' -DefaultValue $true) -eq $true
+    }
+
+    Test-Case "rend un vrai booleen, pas une chaine" {
+        (Read-Confirmation -Message 'Continuer ?' -DefaultValue $true) -is [bool]
+    }
+}
+
+#endregion
+
+
+#region PS5-Core.UI — Read-TextInput
+
+if (-not $OnlyRuntime) {
+    Write-TestHeader "PS5-Core.UI — Read-TextInput"
+
+    Test-Case "entree redirigee rend -Default" {
+        (Read-TextInput -Message 'Nom ?' -Default 'repli') -eq 'repli'
+    }
+
+    Test-Case "entree redirigee sans -Default leve" {
+        Test-Rejects { Read-TextInput -Message 'Nom ?' }
+    }
+
+    Test-Case "un -Default vide est accepte avec -AllowEmpty" {
+        (Read-TextInput -Message 'Nom ?' -Default '' -AllowEmpty) -eq ''
+    }
+
+    Test-Case "un -Default vide sans -AllowEmpty leve" {
+        Test-Rejects { Read-TextInput -Message 'Nom ?' -Default '' }
+    }
+
+    Test-Case "un -Default refuse par -Validate leve" {
+        Test-Rejects { Read-TextInput -Message 'Nombre ?' -Default 'abc' -Validate { $_ -match '^\d+$' } }
+    }
+
+    Test-Case "un -Default accepte par -Validate est rendu" {
+        (Read-TextInput -Message 'Nombre ?' -Default '42' -Validate { $_ -match '^\d+$' }) -eq '42'
+    }
+}
+
+#endregion
+
+
+#region PS5-Core.UI — Start-Spinner
+
+if (-not $OnlyRuntime) {
+    Write-TestHeader "PS5-Core.UI — Start-Spinner"
+
+    Test-Case "rend la valeur du scriptblock" {
+        (Start-Spinner -Message 'Travail' -ScriptBlock { 'fait' }) -eq 'fait'
+    }
+
+    Test-Case "refuse l'imbrication" {
+        Test-Rejects {
+            Start-Spinner -Message 'externe' -ScriptBlock {
+                Start-Spinner -Message 'interne' -ScriptBlock { }
+            }
+        }
+    }
+
+    Test-Case "refuse d'etre appele dans Start-ProgressScope" {
+        # Contrat repris tel quel de PS7-Core : l'interdit y vient de Spectre, qui
+        # ne sait pas empiler un Status dans un Progress. Il n'y a pas de Spectre
+        # ici, mais la surface publique des deux bibliotheques doit rester la
+        # meme — un script valide sur l'une ne doit pas casser sur l'autre.
+        Test-Rejects {
+            Start-ProgressScope -ScriptBlock {
+                Start-Spinner -Message 'interne' -ScriptBlock { }
+            }
+        }
+    }
+
+    Test-Case "refuse Start-ProgressScope a l'interieur" {
+        Test-Rejects {
+            Start-Spinner -Message 'externe' -ScriptBlock {
+                Start-ProgressScope -ScriptBlock { }
+            }
+        }
+    }
+
+    Test-Case "une erreur du scriptblock se propage" {
+        Test-Rejects { Start-Spinner -Message 'Travail' -ScriptBlock { throw 'boum' } }
+    }
+
+    Test-Case "l'etat est remis a plat apres un scriptblock en echec" {
+        # Sans nettoyage en finally, le sentinelle resterait arme et ce second
+        # appel echouerait par « imbrication refusee ».
+        try { Start-Spinner -Message 'Travail' -ScriptBlock { throw 'boum' } } catch { }
+        (Start-Spinner -Message 'Travail' -ScriptBlock { 'ok' }) -eq 'ok'
     }
 }
 

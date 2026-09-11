@@ -5,7 +5,7 @@
     # Version number of this module. Single source of truth for the whole
     # library: the four manifests move together. The submodules never ship on
     # their own, so a version of their own would inform nobody and only drift.
-    ModuleVersion     = '1.1.0'
+    ModuleVersion     = '1.2.0'
 
     # ID used to uniquely identify this module
     GUID              = '72f309e7-8582-4cb1-8fe9-202e71a4cc43'
@@ -49,6 +49,9 @@
         'Write-Summary',
         'Read-Selection',
         'Read-FolderSelection',
+        'Read-Confirmation',
+        'Read-TextInput',
+        'Start-Spinner',
         'Get-FileHashExtended',
         'Get-StringHash',
         'Test-FileIntegrity'

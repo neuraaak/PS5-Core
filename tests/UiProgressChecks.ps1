@@ -216,16 +216,77 @@ function Invoke-UiProgressChecks {
             catch { return $true }
         }
 
+        # --- Start-Spinner : contrat et parite avec PS7-Core ---------------
+
+        Assert-Check "Start-Spinner propage la sortie du scriptblock" {
+            (Start-Spinner -Message 'travail' -ScriptBlock { 'valeur-de-retour' }) -eq 'valeur-de-retour'
+        }
+
+        Assert-Check "Start-Spinner refuse l imbrication" {
+            try { Start-Spinner -Message 'a' -ScriptBlock { Start-Spinner -Message 'b' -ScriptBlock { } }; return $false }
+            catch { return $true }
+        }
+
+        Assert-Check "Start-Spinner et Start-ProgressScope se refusent mutuellement" {
+            # Les deux sens sont refuses explicitement, comme dans PS7-Core ou la
+            # contrainte vient de Spectre : la surface publique des deux
+            # bibliotheques doit rester la meme.
+            $unSens = $false
+            $autreSens = $false
+            try { Start-ProgressScope { Start-Spinner -Message 'x' -ScriptBlock { } } } catch { $unSens = $true }
+            try { Start-Spinner -Message 'x' -ScriptBlock { Start-ProgressScope { } } } catch { $autreSens = $true }
+            $unSens -and $autreSens
+        }
+
+        Assert-Check "Start-Spinner remet l etat a plat apres une exception" {
+            try { Start-Spinner -Message 'travail' -ScriptBlock { throw 'boum' } } catch { }
+            # Un second appel doit reussir : sinon le sentinelle est reste arme.
+            Start-Spinner -Message 'travail' -ScriptBlock { } | Out-Null
+            return $true
+        }
+
+        Assert-Check "Start-Spinner refuse un scriptblock `$null" {
+            try { Start-Spinner -Message 'travail' -ScriptBlock $null; return $false }
+            catch { return $true }
+        }
+
+        # --- Invites : contrat non interactif -----------------------------
+
+        Assert-Check "Read-Confirmation avec entree redirigee rend le defaut" {
+            # Valide uniquement quand stdin EST redirige : sinon la fonction
+            # affiche une vraie invite et attend une saisie, ce qu une assertion
+            # ne peut ni piloter ni interpreter.
+            if (-not [Console]::IsInputRedirected) { return "SKIP" }
+            ((Read-Confirmation -Message 'continuer ?') -eq $false) -and
+            ((Read-Confirmation -Message 'continuer ?' -DefaultValue $true) -eq $true)
+        }
+
+        Assert-Check "Read-TextInput avec entree redirigee rend -Default" {
+            if (-not [Console]::IsInputRedirected) { return "SKIP" }
+            (Read-TextInput -Message 'nom ?' -Default 'repli') -eq 'repli'
+        }
+
+        Assert-Check "Read-TextInput redirige sans -Default leve" {
+            if (-not [Console]::IsInputRedirected) { return "SKIP" }
+            try { Read-TextInput -Message 'nom ?' | Out-Null; return $false }
+            catch { return $true }
+        }
+
         Assert-Check "le piege de portee enfant se comporte comme dans PS7-Core" {
             # Reaffectation : perdue a la sortie. Mutation d'objet : conservee.
             # C'est la parite qui compte, pas le comportement en soi.
+            # La valeur vue DANS le scope est rangee dans le sac, qui survit :
+            # sans cette relecture, le cas passerait aussi si l'affectation
+            # n'avait aucun effet, et ne prouverait pas que c'est la SORTIE qui
+            # la perd.
             $compteur = 0
             $sac = @{ n = 0 }
             Start-ProgressScope {
                 $compteur = 99
+                $sac['vu'] = $compteur
                 $sac['n'] = 42
             } | Out-Null
-            ($compteur -eq 0) -and ($sac['n'] -eq 42)
+            ($compteur -eq 0) -and ($sac['vu'] -eq 99) -and ($sac['n'] -eq 42)
         }
 
         if ($ProgressStyle -eq 'Text') {

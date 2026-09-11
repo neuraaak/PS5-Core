@@ -54,6 +54,10 @@ $script:ProgressTextState = @{}
 # donc rien d'autre ne permet de détecter une imbrication.
 $script:InProgressScope = $false
 
+# Sentinelle d'imbrication de Start-Spinner, pour la même raison que celle
+# ci-dessus : l'état ne se déduit d'aucune région live, il faut le porter.
+$script:InSpinner = $false
+
 # L'avis de bascule d'Auto est émis une fois par session, pas par appel.
 $script:AutoNoticeShown = $false
 
@@ -265,6 +269,13 @@ function Start-ProgressScope {
 
     if ($script:InProgressScope) {
         throw "Start-ProgressScope does not support nesting."
+    }
+
+    # Miroir du refus posé par Start-Spinner. Contrat repris de PS7-Core, où il
+    # vient d'une limite de Spectre : les deux bibliothèques partagent leur
+    # surface publique, un script valide sur l'une ne doit pas casser sur l'autre.
+    if ($script:InSpinner) {
+        throw "Start-ProgressScope cannot run inside Start-Spinner."
     }
 
     $script:InProgressScope = $true
@@ -603,6 +614,202 @@ function Read-FolderSelection {
 #endregion
 
 
+<#
+.SYNOPSIS
+    Asks a yes/no question.
+
+.DESCRIPTION
+    When the input is redirected (CI, a pipe, a test host) there is no console
+    to prompt on: the function warns and returns -DefaultValue instead of
+    blocking. The default is $false, so an unattended run never confirms an
+    action nobody approved.
+
+.PARAMETER Message
+    The question to display.
+
+.PARAMETER DefaultValue
+    The answer returned on an empty reply, and when the input is redirected.
+
+.OUTPUTS
+    Boolean.
+
+.EXAMPLE
+    if (Read-Confirmation -Message 'Supprimer le dossier ?') { Remove-Item $path }
+#>
+function Read-Confirmation {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param (
+        [Parameter(Mandatory = $true, Position = 0)]
+        [AllowNull()][AllowEmptyString()]
+        [string]$Message,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$DefaultValue = $false
+    )
+
+    if (-not $script:UIContext.Initialized) {
+        $null = Initialize-EnhancedUI
+    }
+
+    if ([Console]::IsInputRedirected) {
+        $choix = if ($DefaultValue) { 'oui' } else { 'non' }
+        Write-StatusMessage "Input is redirected, confirmation skipped: answering '$choix'." -Type Warning
+        return $DefaultValue
+    }
+
+    return Read-ConfirmationPS5 -Message $Message -DefaultValue $DefaultValue
+}
+
+
+<#
+.SYNOPSIS
+    Reads a line of text.
+
+.DESCRIPTION
+    Interactively, the prompt repeats until the answer satisfies -AllowEmpty and
+    -Validate. When the input is redirected there is nothing to repeat, so the
+    contract is: return -Default if the caller supplied one, otherwise throw.
+    Returning an empty string instead would let a script carry on with a value
+    nobody chose.
+
+    -Default is held to the same rules as a typed answer: a default that
+    -Validate rejects, or an empty one without -AllowEmpty, throws rather than
+    passing through unchecked.
+
+.PARAMETER Message
+    The prompt to display.
+
+.PARAMETER Default
+    Value used on an empty reply, and returned when the input is redirected.
+
+.PARAMETER AllowEmpty
+    Accept an empty answer. Without it, an empty answer is refused.
+
+.PARAMETER Validate
+    Scriptblock receiving the answer as $_ and returning $true to accept it.
+
+.OUTPUTS
+    String.
+
+.EXAMPLE
+    $port = Read-TextInput -Message 'Port' -Default '8080' -Validate { $_ -match '^\d+$' }
+#>
+function Read-TextInput {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param (
+        [Parameter(Mandatory = $true, Position = 0)]
+        [AllowNull()][AllowEmptyString()]
+        [string]$Message,
+
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyString()]
+        [string]$Default,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$AllowEmpty,
+
+        [Parameter(Mandatory = $false)]
+        [scriptblock]$Validate
+    )
+
+    if (-not $script:UIContext.Initialized) {
+        $null = Initialize-EnhancedUI
+    }
+
+    $hasDefault = $PSBoundParameters.ContainsKey('Default')
+
+    if ([Console]::IsInputRedirected) {
+        if (-not $hasDefault) {
+            throw "Input is redirected and no -Default was supplied: Read-TextInput has no value to return for '$Message'."
+        }
+
+        $rejection = Get-TextInputRejectionPS5 -Value $Default -AllowEmpty $AllowEmpty.IsPresent -Validate $Validate
+
+        if ($null -ne $rejection) {
+            throw "Input is redirected and the supplied -Default is not usable: $rejection"
+        }
+
+        Write-StatusMessage 'Input is redirected, prompt skipped: using the supplied default.' -Type Warning
+        return $Default
+    }
+
+    return Read-TextInputPS5 -Message $Message -Default $Default -HasDefault $hasDefault -AllowEmpty $AllowEmpty.IsPresent -Validate $Validate
+}
+
+
+<#
+.SYNOPSIS
+    Runs a scriptblock behind a spinner, for work of unknown duration.
+
+.DESCRIPTION
+    Use it where Write-ProgressBar does not apply: no countable steps, so no
+    percentage to show. The spinner lives exactly as long as the scriptblock and
+    is torn down even when the block throws.
+
+    Windows PowerShell 5.1 has no live renderer here: the message is announced,
+    then the work runs. Animating it would need a concurrent runspace for a
+    purely cosmetic gain.
+
+    Start-Spinner and Start-ProgressScope refuse each other, in both directions.
+    The rule comes from PS7-Core, where Spectre cannot nest a Status inside a
+    Progress; it is kept here so the two libraries expose the same contract.
+
+.PARAMETER Message
+    The label shown while the work runs.
+
+.PARAMETER ScriptBlock
+    The work to run. Its value is returned to the caller.
+
+.PARAMETER Spinner
+    Accepted for signature parity with PS7-Core, where it selects the Spectre
+    spinner style. Unused here: this backend does not animate.
+
+.OUTPUTS
+    Whatever the scriptblock returns.
+
+.EXAMPLE
+    $releases = Start-Spinner -Message 'Appel de l''API' -ScriptBlock {
+        Invoke-RestMethod https://example.invalid/releases
+    }
+#>
+function Start-Spinner {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true, Position = 0)]
+        [AllowNull()][AllowEmptyString()]
+        [string]$Message,
+
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$ScriptBlock,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Spinner = 'Dots'
+    )
+
+    if (-not $script:UIContext.Initialized) {
+        $null = Initialize-EnhancedUI
+    }
+
+    if ($script:InSpinner) {
+        throw "Start-Spinner does not support nesting."
+    }
+
+    if ($script:InProgressScope) {
+        throw "Start-Spinner cannot run inside Start-ProgressScope."
+    }
+
+    $script:InSpinner = $true
+    try {
+        return Start-SpinnerPS5 -Message $Message -ScriptBlock $ScriptBlock
+    }
+    finally {
+        $script:InSpinner = $false
+    }
+}
+
+
 #region Module Initialization
 
 Export-ModuleMember -Function @(
@@ -614,7 +821,10 @@ Export-ModuleMember -Function @(
     'Write-Header',
     'Write-Summary',
     'Read-Selection',
-    'Read-FolderSelection'
+    'Read-FolderSelection',
+    'Read-Confirmation',
+    'Read-TextInput',
+    'Start-Spinner'
 )
 
 #endregion

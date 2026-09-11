@@ -203,6 +203,9 @@ script écrit pour l'une s'exécute sur l'autre sans modification.
 | `Read-Selection`        | Invite texte numérotée générique                                         |
 | `Read-FolderSelection`  | Racine + sous-dossiers directs, exclusion par nom, sélection optionnelle |
 | `Start-ProgressScope`   | Scope d'exécution ; voir le piège ci-dessous                             |
+| `Read-Confirmation`     | Question oui/non ; rend `-DefaultValue` quand l'entrée est redirigée     |
+| `Read-TextInput`        | Saisie d'une ligne, avec `-Default`, `-AllowEmpty` et `-Validate`        |
+| `Start-Spinner`         | Indicateur d'activité pour un travail de durée inconnue                  |
 
 > **Piège de scope.** Aucune stratégie n'ouvre de région live, donc
 > `Start-ProgressScope` n'a rien à monter — mais **c'est un vrai scope**,
@@ -212,6 +215,45 @@ script écrit pour l'une s'exécute sur l'autre sans modification.
 > une copie locale perdue à la sortie ; muter un membre d'objet
 > (`$table[$k] = $v`, `$liste.Add(...)`) fonctionne. Pour accumuler, utiliser
 > `[System.Collections.Generic.List[object]]`.
+
+`Start-Spinner` couvre le travail dont on ignore la durée, là où
+`Write-ProgressBar` n'a aucun pourcentage à afficher. Il **n'anime rien** ici :
+il annonce, puis exécute — animer demanderait un runspace concurrent pour un
+gain purement cosmétique.
+
+`Start-Spinner` et `Start-ProgressScope` se refusent mutuellement, **dans les
+deux sens**. La contrainte vient de PS7-Core, où Spectre ne sait empiler ni un
+Status dans un Progress ni l'inverse. Elle n'a pas de raison technique d'être
+ici, et c'est délibéré : autoriser en 5.1 ce que PS7-Core refuse ferait
+« marcher » du code qui casserait une fois porté — le même raisonnement que
+pour le scope ci-dessus.
+
+#### Invites sans console
+
+`Read-Confirmation` et `Read-TextInput` ne peuvent pas bloquer sur un hôte où
+l'entrée est redirigée (CI, pipe, harnais de test). La règle est unique :
+**rendre le défaut s'il existe, lever sinon.**
+
+| Appel                                              | Entrée redirigée           |
+| -------------------------------------------------- | -------------------------- |
+| `Read-Confirmation -Message m`                     | `$false` (+ avertissement) |
+| `Read-Confirmation -Message m -DefaultValue $true` | `$true` (+ avertissement)  |
+| `Read-TextInput -Message m -Default d`             | `d` (+ avertissement)      |
+| `Read-TextInput -Message m`                        | **lève**                   |
+
+`Read-Confirmation` a toujours un défaut, donc ne lève jamais : une exécution
+sans surveillance ne confirme rien que personne n'a approuvé. `Read-TextInput`
+n'en a pas toujours, et rendre `''` en silence laisserait un script continuer
+avec une valeur que personne n'a choisie. `-Default` est soumis aux mêmes
+règles qu'une saisie : vide sans `-AllowEmpty`, ou refusé par `-Validate`, il
+lève plutôt que de passer sans contrôle.
+
+Il n'y a **pas** de commutateur `-Force` : l'appelant qui veut piloter le mode
+non interactif fournit déjà `-DefaultValue` / `-Default`.
+
+Le paramètre `-Spinner` de `Start-Spinner` est accepté mais ignoré : il existe
+pour que la signature reste identique à celle de PS7-Core, où il choisit le
+style d'animation Spectre.
 
 ### PS5-Core.Crypto
 

@@ -158,3 +158,106 @@ function Read-SelectionPS5 {
 
     return $picked
 }
+
+
+function Read-ConfirmationPS5 {
+    param(
+        [string]$Message,
+        [bool]$DefaultValue
+    )
+
+    # Le libellé porte le défaut en majuscule : c'est la seule indication que
+    # reçoit l'utilisateur quand il valide une ligne vide.
+    $hint = if ($DefaultValue) { '[O/n]' } else { '[o/N]' }
+
+    while ($true) {
+        Write-Host ''
+        $answer = (Read-Host "$Message $hint").Trim()
+
+        if ([string]::IsNullOrEmpty($answer)) {
+            return $DefaultValue
+        }
+
+        switch -Regex ($answer) {
+            '^(o|oui|y|yes)$' { return $true }
+            '^(n|non|no)$' { return $false }
+            default {
+                Write-StatusMessagePS5 -Message "Répondre 'o' ou 'n'." -Type Warning
+            }
+        }
+    }
+}
+
+function Get-TextInputRejectionPS5 {
+    <#
+        Retourne $null quand la valeur est acceptable, sinon le motif du refus.
+        Partagé par l'invite ET par la garde non interactive : c'est le seul
+        endroit qui décide ce qu'est une saisie valide, pour qu'une valeur
+        refusée à l'invite ne puisse pas être acceptée comme défaut.
+    #>
+    param(
+        [string]$Value,
+        [bool]$AllowEmpty,
+        [scriptblock]$Validate
+    )
+
+    if ([string]::IsNullOrEmpty($Value) -and -not $AllowEmpty) {
+        return 'Une valeur est requise.'
+    }
+
+    if ($null -eq $Validate) {
+        return $null
+    }
+
+    # $_ dans le scriptblock de validation : c'est la convention PowerShell
+    # (ValidateScript), et l'appelant l'attend plutôt qu'un paramètre nommé.
+    $accepted = ForEach-Object -InputObject $Value -Process $Validate
+
+    if ($accepted) {
+        return $null
+    }
+
+    return "La valeur '$Value' n'est pas valide."
+}
+
+function Read-TextInputPS5 {
+    param(
+        [string]$Message,
+        [string]$Default,
+        [bool]$HasDefault,
+        [bool]$AllowEmpty,
+        [scriptblock]$Validate
+    )
+
+    $hint = if ($HasDefault -and -not [string]::IsNullOrEmpty($Default)) { " [$Default]" } else { '' }
+
+    while ($true) {
+        Write-Host ''
+        $answer = (Read-Host "$Message$hint").Trim()
+
+        if ([string]::IsNullOrEmpty($answer) -and $HasDefault) {
+            $answer = $Default
+        }
+
+        $rejection = Get-TextInputRejectionPS5 -Value $answer -AllowEmpty $AllowEmpty -Validate $Validate
+
+        if ($null -eq $rejection) {
+            return $answer
+        }
+
+        Write-StatusMessagePS5 -Message $rejection -Type Warning
+    }
+}
+
+function Start-SpinnerPS5 {
+    param(
+        [string]$Message,
+        [scriptblock]$ScriptBlock
+    )
+
+    # Pas d'animation : la faire tourner demanderait un runspace concurrent pour
+    # un gain purement cosmétique. On annonce, puis on exécute — exactement ce
+    # que fait la stratégie Text pour la progression.
+    Write-StatusMessagePS5 -Message "$Message..." -Type Info
+    return & $ScriptBlock
+}
