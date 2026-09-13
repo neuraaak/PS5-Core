@@ -81,11 +81,19 @@ function Initialize-Logging {
     if ($parent -and -not (Test-Path -LiteralPath $parent)) {
         # Deliberately not wrapped in a try: an unusable path is a real error
         # here, and the caller asked for logging explicitly.
-        New-Item -ItemType Directory -Path $parent -Force -ErrorAction Stop | Out-Null
+        # -WhatIf:$false : durcissement. Via Import-Module (le chemin supporte)
+        # $WhatIfPreference ne franchit pas la frontiere de module et ne nous
+        # atteint jamais ; il nous atteindrait si ce fichier etait dot-source
+        # dans la portee d'un appelant lance en simulation. Journaliser n'est
+        # pas l'operation que cet appelant simule.
+        New-Item -ItemType Directory -Path $parent -Force -ErrorAction Stop -WhatIf:$false | Out-Null
     }
 
     # Touch the file so an unwritable location fails now, not mid-run.
-    Add-Content -LiteralPath $Path -Value '' -Encoding UTF8 -ErrorAction Stop
+    # -WhatIf:$false pour la meme raison : sinon, dot-source sous -WhatIf, le
+    # fichier n'est jamais touche et chaque ecriture polluerait la sortie d'un
+    # "What if: Performing the operation Add Content" etranger a la simulation.
+    Add-Content -LiteralPath $Path -Value '' -Encoding UTF8 -ErrorAction Stop -WhatIf:$false
 
     $script:LogContext.Path = $Path
     $script:LogContext.MinimumLevel = $MinimumLevel
@@ -137,7 +145,7 @@ function Write-Log {
         if ($parent -and -not (Test-Path -LiteralPath $parent)) {
             throw "Log directory no longer exists: $parent"
         }
-        Add-Content -LiteralPath $script:LogContext.Path -Value $line -Encoding UTF8 -ErrorAction Stop
+        Add-Content -LiteralPath $script:LogContext.Path -Value $line -Encoding UTF8 -ErrorAction Stop -WhatIf:$false
     }
     catch {
         $script:LogContext.Enabled = $false
